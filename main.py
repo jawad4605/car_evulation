@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -8,6 +8,7 @@ import joblib
 import pandas as pd
 from typing import Optional
 import os
+import datetime
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -36,6 +37,9 @@ try:
 except Exception as e:
     raise RuntimeError(f"Failed to load model files: {str(e)}")
 
+# Create inverse mapping for year_code to year
+code_to_year = {v: int(k) for k, v in name_to_code_maps['year_to_code'].items()}
+
 # Model configuration
 model_features = [
     'brand_code', 'model_code', 'year_code', 'transmission_code',
@@ -46,7 +50,7 @@ cat_cols = [
     'brand_code', 'model_code', 'year_code',
     'transmission_code', 'fuel_type_code', 'version'
 ]
-CURRENT_YEAR = 2025
+CURRENT_YEAR = datetime.datetime.now().year
 
 # Input schema
 class PredictionInput(BaseModel):
@@ -61,10 +65,10 @@ class PredictionInput(BaseModel):
     mileage: float
     fuel_type_code: Optional[int] = None
 
-# Root endpoint
-@app.get("/")
-async def root():
-    return {"message": "Car Price Prediction API is running"}
+# Serve frontend at root
+@app.get("/", include_in_schema=False)
+async def serve_frontend():
+    return FileResponse('static/index.html')
 
 # Health check endpoint
 @app.get("/health")
@@ -88,12 +92,19 @@ async def predict(input_data: PredictionInput):
             year_str = str(input_dict['year'])
             input_dict['year_code'] = name_to_code_maps['year_to_code'].get(year_str, -1)
         
+        # Handle year if only year_code is provided
+        if 'year' not in input_dict:
+            if 'year_code' in input_dict:
+                year = code_to_year.get(input_dict['year_code'], None)
+                if year is not None:
+                    input_dict['year'] = year
+                else:
+                    raise HTTPException(status_code=400, detail="Invalid year_code provided")
+            else:
+                raise HTTPException(status_code=400, detail="Either year or year_code is required")
+        
         # Calculate derived features
-        if 'year' in input_dict:
-            input_dict['age'] = CURRENT_YEAR - input_dict['year']
-        else:
-            raise HTTPException(status_code=400, detail="Year is required")
-            
+        input_dict['age'] = CURRENT_YEAR - input_dict['year']
         input_dict['mileage_per_year'] = input_dict['mileage'] / max(input_dict['age'], 1)
         input_dict['age_squared'] = input_dict['age'] ** 2
         
@@ -121,12 +132,6 @@ async def predict(input_data: PredictionInput):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-# Redirect root to static index.html
-@app.get("/", include_in_schema=False)
-async def serve_frontend():
-    from fastapi.responses import FileResponse
-    return FileResponse('static/index.html')
 
 if __name__ == "__main__":
     import uvicorn
