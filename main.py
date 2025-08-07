@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException, FileResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import xgboost as xgb
