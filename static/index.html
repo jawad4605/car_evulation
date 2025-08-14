@@ -78,7 +78,7 @@
                     throw new Error('API request failed');
                 }
                 const result = await response.json();
-                resultDiv.innerHTML = `Predicted Price: €${result.predicted_price.toFixed(2)}`;
+                resultDiv.innerHTML = `Predicted Price: $${result.predicted_price.toFixed(2)}`;
             } catch (error) {
                 resultDiv.innerHTML = `Error: ${error.message}`;
             }
