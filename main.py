@@ -1,4 +1,3 @@
-# main.py
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -31,19 +30,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Load model and encoders/maps
+# Load model and encoders/maps from models folder
+MODEL_DIR = 'models'  # Folder where models are saved
 try:
-    model = joblib.load('accurate_car_price_model.pkl')
-    label_encoders = joblib.load('label_encoders.pkl')
-    name_to_code_maps = joblib.load('name_to_code_maps.pkl')
-    code_to_name_maps = joblib.load('code_to_name_maps.pkl')
+    model = joblib.load(os.path.join(MODEL_DIR, 'accurate_car_price_model.pkl'))
+    label_encoders = joblib.load(os.path.join(MODEL_DIR, 'label_encoders.pkl'))
+    name_to_code_maps = joblib.load(os.path.join(MODEL_DIR, 'name_to_code_maps.pkl'))
+    code_to_name_maps = joblib.load(os.path.join(MODEL_DIR, 'code_to_name_maps.pkl'))
 except Exception as e:
-    raise RuntimeError(f"Failed to load model files: {str(e)}")
-
-# Known values from training for validation
-unique_fuel = [8, 9, 2561]  # Adjust based on your actual unique values
-unique_trans = [780, 781]  # Adjust based on your actual unique values
-unique_version_patterns = r'\d|\btdi\b|\btfsi\b|\bs line\b|\bquattro\b|\bsport\b|\bdesign\b|\be-tron\b'
+    raise RuntimeError(f"Failed to load model files from {MODEL_DIR}: {str(e)}")
 
 # Model configuration
 model_features = [
@@ -57,23 +52,25 @@ cat_cols = [
 ]
 CURRENT_YEAR = datetime.datetime.now().year
 
+# Known values for validation (adjust based on your dataset)
+KNOWN_FUEL_CODES = [8, 9, 2561]  # diesel, petrol, hybrid
+KNOWN_TRANS_CODES = [780, 781]   # manual, auto
+VERSION_PATTERN = r'\d|\btdi\b|\btfsi\b|\bs line\b|\bquattro\b|\bsport\b|\bdesign\b|\be-tron\b'
+
 # Function to extract engine_size
 def extract_engine_size(version):
     match = re.search(r'(\d+\.\d+)', version)
-    return float(match.group(1)) if match else np.nan
+    return float(match.group(1)) if match else 1.5  # Default median
 
-# Input schema
+# Input schema (no codes required from user)
 class PredictionInput(BaseModel):
-    brand_code: Optional[int] = None
-    brand: Optional[str] = None
-    model_code: Optional[int] = None
-    model: Optional[str] = None
-    year_code: Optional[int] = None
-    year: Optional[int] = None
-    transmission_code: Optional[int] = None
-    version: Optional[str] = None
-    mileage: float
-    fuel_type_code: Optional[int] = None
+    brand: str  # Required: e.g., "Audi"
+    model: str  # Required: e.g., "A3"
+    year: int   # Required: e.g., 2020
+    transmission_code: int  # Required: e.g., 781 for auto
+    version: str  # Required: e.g., "1.5 tfsi s line"
+    mileage: float  # Required: e.g., 50000
+    fuel_type_code: int  # Required: e.g., 9 for petrol
 
 # Serve frontend at root
 @app.get("/", include_in_schema=False)
@@ -90,46 +87,38 @@ async def health_check():
 async def predict(input_data: PredictionInput):
     try:
         input_dict = input_data.dict(exclude_none=True)
-       
-        # Map names to codes
-        if 'brand_code' not in input_dict and 'brand' in input_dict:
-            brand_lower = input_dict['brand'].lower()
-            input_dict['brand_code'] = name_to_code_maps['brand_to_code'].get(brand_lower, -1)
-        elif 'brand' not in input_dict and 'brand_code' in input_dict:
-            input_dict['brand'] = code_to_name_maps['code_to_brand'].get(input_dict['brand_code'], 'Unknown')
+        
+        # Map names to codes (required for model input)
+        brand_lower = input_dict['brand'].lower()
+        input_dict['brand_code'] = name_to_code_maps['brand_to_code'].get(brand_lower, -1)
+        if input_dict['brand_code'] == -1:
+            raise HTTPException(status_code=400, detail=f"Invalid brand: {input_dict['brand']}")
 
-        if 'model_code' not in input_dict and 'model' in input_dict:
-            model_lower = input_dict['model'].lower()
-            input_dict['model_code'] = name_to_code_maps['model_to_code'].get(model_lower, -1)
-        elif 'model' not in input_dict and 'model_code' in input_dict:
-            input_dict['model'] = code_to_name_maps['code_to_model'].get(input_dict['model_code'], 'Unknown')
+        model_lower = input_dict['model'].lower()
+        input_dict['model_code'] = name_to_code_maps['model_to_code'].get(model_lower, -1)
+        if input_dict['model_code'] == -1:
+            raise HTTPException(status_code=400, detail=f"Invalid model: {input_dict['model']}")
 
-        if 'year_code' not in input_dict and 'year' in input_dict:
-            year_str = str(input_dict['year'])
-            input_dict['year_code'] = name_to_code_maps['year_to_code'].get(year_str, -1)
-        elif 'year' not in input_dict and 'year_code' in input_dict:
-            input_dict['year'] = code_to_name_maps['code_to_year'].get(input_dict['year_code'], -1)
-            if input_dict['year'] == -1:
-                raise HTTPException(status_code=400, detail="Invalid year_code provided")
+        year_str = str(input_dict['year'])
+        input_dict['year_code'] = name_to_code_maps['year_to_code'].get(year_str, -1)
+        if input_dict['year_code'] == -1:
+            raise HTTPException(status_code=400, detail=f"Invalid year: {input_dict['year']}")
 
-        if 'year' not in input_dict:
-            raise HTTPException(status_code=400, detail="Either year or year_code is required")
-
-        # Validation
-        if 'fuel_type_code' in input_dict and input_dict['fuel_type_code'] not in unique_fuel:
-            raise HTTPException(status_code=400, detail=f"Invalid fuel_type_code: {input_dict['fuel_type_code']}. Known: {unique_fuel}")
-        if 'transmission_code' in input_dict and input_dict['transmission_code'] not in unique_trans:
-            raise HTTPException(status_code=400, detail=f"Invalid transmission_code: {input_dict['transmission_code']}. Known: {unique_trans}")
-        if 'mileage' in input_dict and not (0 <= input_dict['mileage'] <= 500000):
-            raise HTTPException(status_code=400, detail=f"Invalid mileage: {input_dict['mileage']}. Must be 0-500,000 km.")
-        if 'version' in input_dict and not re.search(unique_version_patterns, input_dict['version'], re.IGNORECASE):
-            raise HTTPException(status_code=400, detail="Invalid version: Lacks typical engine/trim patterns.")
+        # Input validation
+        if input_dict['fuel_type_code'] not in KNOWN_FUEL_CODES:
+            raise HTTPException(status_code=400, detail=f"Invalid fuel_type_code. Known: {KNOWN_FUEL_CODES}")
+        if input_dict['transmission_code'] not in KNOWN_TRANS_CODES:
+            raise HTTPException(status_code=400, detail=f"Invalid transmission_code. Known: {KNOWN_TRANS_CODES}")
+        if not (0 <= input_dict['mileage'] <= 500000):
+            raise HTTPException(status_code=400, detail="Invalid mileage: Must be between 0 and 500,000 km")
+        if not re.search(VERSION_PATTERN, input_dict['version'], re.IGNORECASE):
+            raise HTTPException(status_code=400, detail="Invalid version: Lacks typical engine/trim patterns")
 
         # Calculate derived features
         input_dict['age'] = CURRENT_YEAR - input_dict['year']
         input_dict['mileage_per_year'] = input_dict['mileage'] / max(input_dict['age'], 1)
         input_dict['age_squared'] = input_dict['age'] ** 2
-        input_dict['engine_size'] = extract_engine_size(input_dict.get('version', '')) or np.nanmedian([1.0])  # Use a default median if NaN
+        input_dict['engine_size'] = extract_engine_size(input_dict['version'])
 
         # Prepare input DataFrame
         model_input = {feature: input_dict.get(feature, -1) for feature in model_features}
@@ -153,7 +142,7 @@ async def predict(input_data: PredictionInput):
         pred_price = float(np.expm1(pred_log))
 
         return {"predicted_price": pred_price}
-
+        
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
