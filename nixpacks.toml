@@ -1,16 +1,19 @@
 [phases.setup]
 nixPkgs = ['python312', 'python312Packages.pip', 'python312Packages.uvicorn']
 
+[phases.build]
+cmds = [
+  'mkdir -p /app/models /app/static',
+  'cp -r ./models/* /app/models/ || true',  # Updated to ./models/
+  'cp -r ./static/* /app/static/ || true'
+]
+
 [phases.install]
 cmds = [
   'python -m venv /opt/venv',
   'source /opt/venv/bin/activate',
   'pip install -r requirements.txt'
 ]
-
-# Optional: Copy models folder to ensure it's available at runtime
-[phases.build]
-cmds = ['mkdir -p /app/models', 'cp -r ./models/* /app/models/ || true']  # Adjust if models are elsewhere
 
 [start]
 cmd = 'source /opt/venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port $PORT --workers 2'
