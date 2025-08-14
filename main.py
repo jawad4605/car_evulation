@@ -58,21 +58,21 @@ CURRENT_YEAR = datetime.datetime.now().year
 
 # Known values for validation
 KNOWN_FUEL_CODES = [8, 9, 2561]
-KNOWN_TRANS_CODES = [780, 781]  # Updated to include 780 and 781 as valid
+KNOWN_TRANS_CODES = [780, 781]
 
 # Extract engine_size
 def extract_engine_size(version):
     match = re.search(r'(\d+\.\d+)', version)
-    return float(match.group(1)) if match else 1.5  # Default
+    return float(match.group(1)) if match else 1.5  # Default median
 
-# Input schema (mileage as int)
+# Input schema
 class PredictionInput(BaseModel):
     brand: str
     model: str
     year: int
     transmission_code: int
     version: str
-    mileage: int  # Updated to int
+    mileage: float
     fuel_type_code: int
 
 # Serve frontend
@@ -91,30 +91,29 @@ async def predict(input_data: PredictionInput):
     try:
         input_dict = input_data.dict(exclude_none=True)
         
-        # Map names to codes
+        # Map names to codes (flexible for model: try with/without brand prefix)
         brand_lower = input_dict['brand'].lower()
         input_dict['brand_code'] = name_to_code_maps['brand_to_code'].get(brand_lower, -1)
         if input_dict['brand_code'] == -1:
             raise HTTPException(status_code=400, detail=f"Invalid brand: {input_dict['brand']}")
 
         model_lower = input_dict['model'].lower()
-        input_dict['model_code'] = name_to_code_maps['model_to_code'].get(model_lower, -1)
+        input_dict['model_code'] = name_to_code_maps['model_to_code'].get(model_lower, name_to_code_maps['model_to_code'].get(f"{brand_lower} {model_lower}", -1))
         if input_dict['model_code'] == -1:
-            raise HTTPException(status_code=400, detail=f"Invalid model: {input_dict['model']}")
+            raise HTTPException(status_code=400, detail=f"Invalid model: {input_dict['model']} for brand {input_dict['brand']}")
 
         year_str = str(input_dict['year'])
         input_dict['year_code'] = name_to_code_maps['year_to_code'].get(year_str, -1)
         if input_dict['year_code'] == -1:
             raise HTTPException(status_code=400, detail=f"Invalid year: {input_dict['year']}")
 
-        # Validation (only for fuel and transmission; no mileage/version checks)
+        # Validation (only for fuel and transmission)
         if input_dict['fuel_type_code'] not in KNOWN_FUEL_CODES:
             raise HTTPException(status_code=400, detail=f"Invalid fuel_type_code. Known: {KNOWN_FUEL_CODES}")
         if input_dict['transmission_code'] not in KNOWN_TRANS_CODES:
             raise HTTPException(status_code=400, detail=f"Invalid transmission_code. Known: {KNOWN_TRANS_CODES}")
 
-        # Derived features (convert mileage to float)
-        input_dict['mileage'] = float(input_dict['mileage'])  # Convert int to float
+        # Derived features
         input_dict['age'] = CURRENT_YEAR - input_dict['year']
         input_dict['mileage_per_year'] = input_dict['mileage'] / max(input_dict['age'], 1)
         input_dict['age_squared'] = input_dict['age'] ** 2
@@ -125,12 +124,14 @@ async def predict(input_data: PredictionInput):
         input_df = pd.DataFrame([model_input])
         logger.info(f"Input DF: {input_df}")
 
-        # Encode (str conversion to match training)
+        # Encode (use -1 for unseen values without raising error)
         for col in cat_cols:
             value = str(input_df[col].iloc[0])
-            if value not in label_encoders[col].classes_:
-                raise HTTPException(status_code=400, detail=f"Invalid {col} value: {value}")
-            input_df[col] = label_encoders[col].transform([value])[0]
+            if value in label_encoders[col].classes_:
+                input_df[col] = label_encoders[col].transform([value])[0]
+            else:
+                logger.warning(f"Unseen {col} value: {value}. Using default -1.")
+                input_df[col] = -1
 
         # Log transforms
         input_df['mileage'] = np.log1p(input_df['mileage'])
