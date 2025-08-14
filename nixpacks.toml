@@ -4,7 +4,7 @@ nixPkgs = ['python312', 'python312Packages.pip', 'python312Packages.uvicorn']
 [phases.build]
 cmds = [
   'mkdir -p /app/models /app/static',
-  'cp -r ./models/* /app/models/ || true',  # Updated to ./models/
+  'cp -r ./models/* /app/models/ || true',  # Copies your models folder
   'cp -r ./static/* /app/static/ || true'
 ]
 
