@@ -1,7 +1,5 @@
-<!-- index.html -->
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -11,22 +9,18 @@
             font-family: Arial, sans-serif;
             margin: 20px;
         }
-
         form {
             max-width: 400px;
         }
-
         label {
             display: block;
             margin-top: 10px;
         }
-
         input {
             width: 100%;
             padding: 8px;
             margin-top: 5px;
         }
-
         button {
             margin-top: 20px;
             padding: 10px;
@@ -35,40 +29,31 @@
             border: none;
             cursor: pointer;
         }
-
         button:hover {
             background-color: #45a049;
         }
-
         #result {
             margin-top: 20px;
             font-weight: bold;
         }
     </style>
 </head>
-
 <body>
     <h1>Car Price Prediction</h1>
     <form id="predictionForm">
-        <label for="brand_code">Brand Code (optional if brand provided):</label>
-        <input type="number" id="brand_code" name="brand_code">
-        <label for="brand">Brand (e.g., Volvo):</label>
-        <input type="text" id="brand" name="brand">
-        <label for="model_code">Model Code (optional if model provided):</label>
-        <input type="number" id="model_code" name="model_code">
-        <label for="model">Model (e.g., Volvo V40):</label>
-        <input type="text" id="model" name="model">
-        <label for="year_code">Year Code (optional if year provided):</label>
-        <input type="number" id="year_code" name="year_code">
-        <label for="year">Year (e.g., 2018):</label>
+        <label for="brand">Brand (e.g., Audi):</label>
+        <input type="text" id="brand" name="brand" required>
+        <label for="model">Model (e.g., A3):</label>
+        <input type="text" id="model" name="model" required>
+        <label for="year">Year (e.g., 2020):</label>
         <input type="number" id="year" name="year" required>
-        <label for="transmission_code">Transmission Code:</label>
+        <label for="transmission_code">Transmission Code (780 for manual, 781 for auto):</label>
         <input type="number" id="transmission_code" name="transmission_code" required>
-        <label for="version">Version (e.g., 3 1.5):</label>
+        <label for="version">Version (e.g., 1.5 tfsi s line):</label>
         <input type="text" id="version" name="version" required>
-        <label for="mileage">Mileage (required):</label>
+        <label for="mileage">Mileage (km, required):</label>
         <input type="number" id="mileage" name="mileage" required>
-        <label for="fuel_type_code">Fuel Type Code:</label>
+        <label for="fuel_type_code">Fuel Type Code (8 for diesel, 9 for petrol, 2561 for hybrid):</label>
         <input type="number" id="fuel_type_code" name="fuel_type_code" required>
         <button type="submit">Predict Price</button>
     </form>
@@ -80,12 +65,11 @@
             event.preventDefault();
             const formData = new FormData(form);
             const data = Object.fromEntries(formData.entries());
-            // Convert numeric fields to numbers
-            ['brand_code', 'model_code', 'year_code', 'year', 'transmission_code', 'mileage', 'fuel_type_code'].forEach(field => {
+            ['year', 'transmission_code', 'mileage', 'fuel_type_code'].forEach(field => {
                 if (data[field]) data[field] = parseFloat(data[field]);
             });
             try {
-                const response = await fetch('/predict', {  // Use relative path for same-origin requests
+                const response = await fetch('/predict', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(data)
@@ -94,12 +78,11 @@
                     throw new Error('API request failed');
                 }
                 const result = await response.json();
-                resultDiv.innerHTML = `Predicted Price: $${result.predicted_price.toFixed(2)}`;
+                resultDiv.innerHTML = `Predicted Price: €${result.predicted_price.toFixed(2)}`;
             } catch (error) {
                 resultDiv.innerHTML = `Error: ${error.message}`;
             }
         });
     </script>
 </body>
-
 </html>
