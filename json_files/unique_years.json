@@ -1,0 +1,19 @@
+[
+{"type":"header","version":"5.2.1","comment":"Export to JSON plugin for PHPMyAdmin"},
+{"type":"database","name":"lafouine"},
+{"type":"table","name":"unique_years","database":"lafouine","data":
+[
+{"year_code":"81","year":"2017"},
+{"year_code":"3172","year":"2022"},
+{"year_code":"79","year":"2015"},
+{"year_code":"2854","year":"2020"},
+{"year_code":"3178","year":"2023"},
+{"year_code":"3033","year":"2019"},
+{"year_code":"2852","year":"2018"},
+{"year_code":"3147","year":"2021"},
+{"year_code":"80","year":"2016"},
+{"year_code":"3333","year":"Fiesta"},
+{"year_code":"3334","year":"Yaris"}
+]
+}
+]
